@@ -10,16 +10,22 @@ import math
 import tf2_geometry_msgs
 import skfuzzy as fuzz
 from skfuzzy import control as ctrl
-from gpg_urdf.fuzzy_rules import FuzzyAvoider, FuzzyNavigator
+from gpg_urdf.GA_rules import FuzzyAvoider, FuzzyNavigator
 import numpy as np
 import time
 
-class LidarProcessor(Node):
+class GAnavigation(Node):
     def __init__(self):
-        super().__init__('lidar_processor')
+        super().__init__('ga_navigation')
 
-        self.fuzzy_nav = FuzzyNavigator()
-        self.fuzzy_avoid = FuzzyAvoider()
+        chrom = [3, 2, 1, 3, 2, 1, 3, 1, 1, 2, 1, 1,
+         2, 4, 1, 2, 2, 0, 3, 2, 1, 2, 2, 0, 3, 1, 1, 0, 3, 0, 3, 4, 1, 3, 0, 1, 0, 4, 0, np.float64(0.0), 3, 1, 3, 3, 1, 1, 0, 0, 0, 1, 0, 3, 1, 1, 2, 1, 1, 3, 1, 1, 3, 0, np.float64(1.0), 1, 0, 0, 0, 3, 0, 0, 3, 1, 2, 0, 0, 0, 4, 1, 2, 4, 1, 3, 3, 1, 1, 3, 0, 0, 0, 0, 3, np.float64(1.0), 1, 1, 0, 1, 2, 0, 1, 0, 1, 0, 2, 0, 0, 0, 3, 0, 1, 2, 1, 3, 3, 1, 2, 2, 1, 0, 4, 0, 3, 0, 1, 2, 3, 0, 0, 2, 1, 0, 2, 0, 3, 2, 0, 1, 3, 0, 1, 3, np.float64(0.0), 2, 3, 0, 3, 2, 1, 3, 4, 1, 2, 2, 1, 2, 3, 1, 2, 2, 0, 0, 4, 0, 0, 2, 0, 1, 4, 1, 3, 2, 0, 1, 2, 0, 1, 1, 0, 1, 2, 1, 1, 4, 0, 3, 1, 0, 2, 4, 0, 0, 3, 1, 3, 3, 0, np.float64(1.0), 0, 1, 2, 0, 1, 2, 0, 1, 0, 1, 1, 3, 0, 1, 1, 3, 0, 1, 4, 0, 0, 4, 1, 2, 2, 0, 0, 1, 0, 3, 4, 0, 3, 4, 1, 2, 3, 0, 0, 2, 1, 3, 0, 1, 1, 4, 1, 1, 3, 0, 2, 1, 0, 2, 4, 1]
+
+        fuzzy_nav = FuzzyNavigator()
+        fuzzy_avoid = FuzzyAvoider()
+
+        self.nav_sim = fuzzy_nav.build_nav_rules_ga(chrom[:60])
+        self.avoid_sim = fuzzy_avoid.build_avoid_rules_ga(chrom[60:])
 
         self.subscription = self.create_subscription(LaserScan, '/scan', self.lidar_callback, 10)
         self.goalPose = self.create_subscription(PoseStamped,'/goal_pose', self.goalCallback,10)
@@ -45,7 +51,7 @@ class LidarProcessor(Node):
             return
 
         current_time = time.time()
-        if current_time - self.last_update_time < 0.5:
+        if current_time - self.last_update_time < 0.1:
             return
         self.last_update_time = current_time
 
@@ -78,8 +84,29 @@ class LidarProcessor(Node):
             distance = math.hypot(dx, dy)
             angle_error = math.atan2(dy, dx)
 
-            v_nav, w_nav = self.fuzzy_nav.compute(distance, angle_error)
-            v_avoid, w_avoid = self.fuzzy_avoid.compute(float(front_dist), float(left_dist), float(right_dist))
+            try:
+                self.nav_sim.input['dist_goal'] = distance
+                self.nav_sim.input['angle_error'] = angle_error
+                self.nav_sim.compute()
+                v_nav = self.nav_sim.output['v_nav']
+                w_nav = self.nav_sim.output['w_nav']
+
+            except:
+                self.get_logger().info(f"Excepcion nav_sim")
+                pass
+
+            try:
+                self.avoid_sim.input['d_front'] = float(front_dist)
+                self.avoid_sim.input['d_left'] = float(left_dist)
+                self.avoid_sim.input['d_right'] = float(right_dist)
+
+                self.avoid_sim.compute()
+                v_avoid = self.avoid_sim.output['v_avoid']
+                w_avoid = self.avoid_sim.output['w_avoid']
+
+            except:
+                self.get_logger().info(f"Excepcion avoid_sim")
+                pass
 
             d_min = min(front_dist, left_dist, right_dist)
             alpha = np.clip((1.5 - d_min)/1.0, 0, 1)
@@ -97,15 +124,16 @@ class LidarProcessor(Node):
                 twist_msg.twist.angular.z = 0.0
             
             self.velPub.publish(twist_msg)
-
             self.get_logger().info(f"dist={distance:.2f}, angle_err={angle_error:.2f}, v={v_nav:.2f}, w={w_nav:.2f}")
         
+        
         except Exception as e:
+            self.get_logger().info(f"Excepcion general: {e}")
             pass
 
 def main(args=None):
     rclpy.init(args=args)
-    node = LidarProcessor()
+    node = GAnavigation()
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()

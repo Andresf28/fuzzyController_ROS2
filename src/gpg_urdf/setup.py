@@ -26,6 +26,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': ["LidarProcessor = gpg_urdf.dist_lidar:main",
+                            "GANavigation = gpg_urdf.ga_navigation:main" 
         ],
     },
 )
