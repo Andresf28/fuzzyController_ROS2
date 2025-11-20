@@ -11,48 +11,71 @@ import xacro
 
 def generate_launch_description():
     robotName = 'GoPiGo3'
-
     packageName = 'gpg_urdf'
-
     modelFilePath = 'urdf/gpg.urdf.xacro'
 
-    pathModelFile = os.path.join(get_package_share_directory(packageName),modelFilePath) 
+    # URDF
+    pathModelFile = os.path.join(
+        get_package_share_directory(packageName),
+        modelFilePath
+    )
 
     robotDescription = xacro.process_file(pathModelFile).toxml()
 
-    gazebo_rosPackageLaunch = PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py'))
-
-    #For own world (might be helpful soon)
+    # Gazebo sim
+    gazebo_rosPackageLaunch = PythonLaunchDescriptionSource(
+        os.path.join(
+            get_package_share_directory('ros_gz_sim'),
+            'launch',
+            'gz_sim.launch.py'
+        )
+    )
 
     WorldFileRelativePath = 'worlds/empty.world'
-    
-    pathWorldFile = os.path.join(get_package_share_directory(packageName),WorldFileRelativePath) 
+    pathWorldFile = os.path.join(
+        get_package_share_directory(packageName),
+        WorldFileRelativePath
+    )
 
-    gazeboLaunch = IncludeLaunchDescription(gazebo_rosPackageLaunch, launch_arguments={'gz_args': ['-r ', pathWorldFile], 'on_exit_shutdown': 'true'}.items())
-    
-    
-    #gazeboLaunch = IncludeLaunchDescription(gazebo_rosPackageLaunch, launch_arguments={'gz_args': ['-r -v 4 empty.sdf'], 'on_exit_shutdown': 'true'}.items())
-    
-    # Nodes
+    gazeboLaunch = IncludeLaunchDescription(
+        gazebo_rosPackageLaunch,
+        launch_arguments={
+            'gz_args': ['-r ', pathWorldFile],
+            'on_exit_shutdown': 'true'
+        }.items()
+    )
+
+    # Spawn robot
     spawnModelNodeGazebo = Node(
         package='ros_gz_sim',
         executable='create',
-        arguments=['-topic', 'robot_description',
-                   '-name', robotName
-                   ],
+        arguments=[
+        '-topic', 'robot_description',
+        '-name', robotName,
+        '-x', '0.0',           
+        '-y', '0.0',            
+        '-z', '0.0',            
+        '-R', '0.0',            
+        '-P', '0.0',            
+        '-Y', '-1.5708',       
+    ],
         output='screen',
     )
 
-    # Robot state publisher
+    # Robot State Publisher
     nodeRobotStatePublisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
         output='screen',
-        parameters=[{'robot_description': robotDescription,
-                     'use_sim_time': True}]
+        parameters=[
+            {
+                'robot_description': robotDescription,
+                'use_sim_time': True
+            }
+        ]
     )
 
-    # Bridge
+    # Bridge config
     bridge_params = os.path.join(
         get_package_share_directory(packageName),
         'config',
@@ -69,6 +92,7 @@ def generate_launch_description():
         ]
     )
 
+    # Controllers
     diff_drive_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -83,15 +107,25 @@ def generate_launch_description():
         output='screen'
     )
 
+    ground_truth_odom_node = Node(
+        package='gpg_urdf',                
+        executable='gz_odom',      
+        name='ground_truth_odom',
+        output='screen',
+        parameters=[{'use_sim_time': True}]   
+    )
+    # -----------------------------------
 
     launchDescriptionObject = LaunchDescription()
 
     launchDescriptionObject.add_action(gazeboLaunch)
-
     launchDescriptionObject.add_action(spawnModelNodeGazebo)
     launchDescriptionObject.add_action(nodeRobotStatePublisher)
     launchDescriptionObject.add_action(start_gazebo_ros_bridge_cmd)
     launchDescriptionObject.add_action(diff_drive_spawner)
     launchDescriptionObject.add_action(joint_state_broadcaster_spawner)
+
+    # Se agrega el nodo
+    launchDescriptionObject.add_action(ground_truth_odom_node)
 
     return launchDescriptionObject
