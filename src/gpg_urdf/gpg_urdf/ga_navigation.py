@@ -18,14 +18,17 @@ class GAnavigation(Node):
     def __init__(self):
         super().__init__('ga_navigation')
 
-        chrom = [3, 2, 1, 3, 2, 1, 3, 1, 1, 2, 1, 1,
-         2, 4, 1, 2, 2, 0, 3, 2, 1, 2, 2, 0, 3, 1, 1, 0, 3, 0, 3, 4, 1, 3, 0, 1, 0, 4, 0, np.float64(0.0), 3, 1, 3, 3, 1, 1, 0, 0, 0, 1, 0, 3, 1, 1, 2, 1, 1, 3, 1, 1, 3, 0, np.float64(1.0), 1, 0, 0, 0, 3, 0, 0, 3, 1, 2, 0, 0, 0, 4, 1, 2, 4, 1, 3, 3, 1, 1, 3, 0, 0, 0, 0, 3, np.float64(1.0), 1, 1, 0, 1, 2, 0, 1, 0, 1, 0, 2, 0, 0, 0, 3, 0, 1, 2, 1, 3, 3, 1, 2, 2, 1, 0, 4, 0, 3, 0, 1, 2, 3, 0, 0, 2, 1, 0, 2, 0, 3, 2, 0, 1, 3, 0, 1, 3, np.float64(0.0), 2, 3, 0, 3, 2, 1, 3, 4, 1, 2, 2, 1, 2, 3, 1, 2, 2, 0, 0, 4, 0, 0, 2, 0, 1, 4, 1, 3, 2, 0, 1, 2, 0, 1, 1, 0, 1, 2, 1, 1, 4, 0, 3, 1, 0, 2, 4, 0, 0, 3, 1, 3, 3, 0, np.float64(1.0), 0, 1, 2, 0, 1, 2, 0, 1, 0, 1, 1, 3, 0, 1, 1, 3, 0, 1, 4, 0, 0, 4, 1, 2, 2, 0, 0, 1, 0, 3, 4, 0, 3, 4, 1, 2, 3, 0, 0, 2, 1, 3, 0, 1, 1, 4, 1, 1, 3, 0, 2, 1, 0, 2, 4, 1]
+        chrom = [1, 1, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0]
 
-        fuzzy_nav = FuzzyNavigator()
-        fuzzy_avoid = FuzzyAvoider()
+        self.fuzzy_nav = FuzzyNavigator()
+        self.fuzzy_avoid = FuzzyAvoider()
 
-        self.nav_sim = fuzzy_nav.build_nav_rules_ga(chrom[:60])
-        self.avoid_sim = fuzzy_avoid.build_avoid_rules_ga(chrom[60:])
+        NUM_NAV_RULES = len(self.fuzzy_nav.rules_nav)
+        mask_nav = chrom[:NUM_NAV_RULES]
+        mask_avoid = chrom[NUM_NAV_RULES:]
+
+        self.nav_sim = self.fuzzy_nav.build_with_mask(mask_nav)
+        self.avoid_sim = self.fuzzy_avoid.build_with_mask(mask_avoid)
 
         self.subscription = self.create_subscription(LaserScan, '/scan', self.lidar_callback, 10)
         self.goalPose = self.create_subscription(PoseStamped,'/goal_pose', self.goalCallback,10)
@@ -84,29 +87,8 @@ class GAnavigation(Node):
             distance = math.hypot(dx, dy)
             angle_error = math.atan2(dy, dx)
 
-            try:
-                self.nav_sim.input['dist_goal'] = distance
-                self.nav_sim.input['angle_error'] = angle_error
-                self.nav_sim.compute()
-                v_nav = self.nav_sim.output['v_nav']
-                w_nav = self.nav_sim.output['w_nav']
-
-            except:
-                self.get_logger().info(f"Excepcion nav_sim")
-                pass
-
-            try:
-                self.avoid_sim.input['d_front'] = float(front_dist)
-                self.avoid_sim.input['d_left'] = float(left_dist)
-                self.avoid_sim.input['d_right'] = float(right_dist)
-
-                self.avoid_sim.compute()
-                v_avoid = self.avoid_sim.output['v_avoid']
-                w_avoid = self.avoid_sim.output['w_avoid']
-
-            except:
-                self.get_logger().info(f"Excepcion avoid_sim")
-                pass
+            v_nav, w_nav = self.fuzzy_nav.compute(self.nav_sim, distance, angle_error)
+            v_avoid, w_avoid = self.fuzzy_avoid.compute(self.avoid_sim, float(front_dist), float(left_dist), float(right_dist))
 
             d_min = min(front_dist, left_dist, right_dist)
             alpha = np.clip((1.5 - d_min)/1.0, 0, 1)
@@ -119,16 +101,17 @@ class GAnavigation(Node):
             twist_msg.twist.linear.x = float(v_final)
             twist_msg.twist.angular.z = float(w_final)
             
-            if distance < 0.1:
+            if distance < 0.2:
                 twist_msg.twist.linear.x = 0.0
                 twist_msg.twist.angular.z = 0.0
             
             self.velPub.publish(twist_msg)
+            
             self.get_logger().info(f"dist={distance:.2f}, angle_err={angle_error:.2f}, v={v_nav:.2f}, w={w_nav:.2f}")
         
         
         except Exception as e:
-            self.get_logger().info(f"Excepcion general: {e}")
+            self.get_logger().info(f"Exception: {e}")
             pass
 
 def main(args=None):

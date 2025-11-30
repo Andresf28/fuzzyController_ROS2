@@ -57,7 +57,7 @@ def generate_launch_description():
         '-z', '0.0',            
         '-R', '0.0',            
         '-P', '0.0',            
-        '-Y', '-1.5708',       
+        '-Y', '0.0',       
     ],
         output='screen',
     )

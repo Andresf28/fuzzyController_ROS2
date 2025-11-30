@@ -45,7 +45,7 @@ class LidarProcessor(Node):
             return
 
         current_time = time.time()
-        if current_time - self.last_update_time < 0.5:
+        if current_time - self.last_update_time < 0.2:
             return
         self.last_update_time = current_time
 
